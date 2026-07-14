@@ -9,6 +9,10 @@ const io = socketIo(server, { cors: { origin: "*" } });
 // In-Memory Databases (Zero-trace on server restart for absolute security)
 const usersDB = {}; 
 const statusesDB = {}; 
+// Ye code socket.on('connection') se pehle daalein
+app.get("/", (req, res) => {
+    res.status(200).send("CalciChat Server is alive and running!");
+});
 
 io.on('connection', (socket) => {
     console.log("🟢 User connected: " + socket.id);
