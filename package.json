@@ -1,0 +1,20 @@
+{
+  "name": "secret-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+  "start": "node index.js"
+},
+  "keywords": [],
+  "author": "Secret-Dev",
+  "engines": {
+  "node": "18.x"
+},
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
+  }
+}
