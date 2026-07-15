@@ -6,13 +6,15 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, { 
     cors: { origin: "*" },
-    maxHttpBufferSize: 1e8 // Ye 100MB limit set kar dega
+    maxHttpBufferSize: 1e8 // Ye 100MB limit set kar dega (for video & images)
 });
 
 // In-Memory Databases (Zero-trace on server restart for absolute security)
 const usersDB = {}; 
-const statusesDB = {}; 
-// Ye code socket.on('connection') se pehle daalein
+const statusesDB = {};
+const offlineMessagesDB = {}; // { targetId: [msg1, msg2] }
+
+// Health Check Route
 app.get("/", (req, res) => {
     res.status(200).send("CalciChat Server is alive and running!");
 });
@@ -41,6 +43,27 @@ io.on('connection', (socket) => {
             isOnline: !ninjaMode, 
             lastSeen: usersDB[userId].lastSeen 
         });
+
+        // 🚀 NEW: DELIVER OFFLINE MESSAGES ON RECONNECT
+        if (offlineMessagesDB[userId] && offlineMessagesDB[userId].length > 0) {
+            console.log(`📤 Delivering ${offlineMessagesDB[userId].length} pending messages to ${userId}`);
+            
+            offlineMessagesDB[userId].forEach((msgData) => {
+                socket.emit('receiveMessage', { 
+                    senderId: msgData.senderId, 
+                    message: msgData.message, 
+                    id: msgData.id, 
+                    type: msgData.type, 
+                    replyTo: msgData.replyTo, 
+                    mediaDuration: msgData.mediaDuration, 
+                    isViewOnce: msgData.isViewOnce, 
+                    isMuted: msgData.isMuted 
+                });
+            });
+            
+            // Queue clear kar do message bhejne ke baad
+            offlineMessagesDB[userId] = []; 
+        }
     });
 
     socket.on('getUserInfo', (targetId, callback) => {
@@ -65,12 +88,19 @@ io.on('connection', (socket) => {
         const target = usersDB[targetId];
         
         if (target && target.socketId) { 
+            // Agar dost online hai, direct message bhejo
             io.to(target.socketId).emit('receiveMessage', { 
                 senderId, message, id, type, replyTo, mediaDuration, isViewOnce, isMuted 
             });
             socket.emit('messageStatus', { id, status: 'delivered' });
         } else {
-            socket.emit('messageStatus', { id, status: 'sent' });
+            // 🚀 NEW: Agar dost offline hai, queue mein daalo
+            if (!offlineMessagesDB[targetId]) offlineMessagesDB[targetId] = [];
+            
+            // Pura data object save kar rahe hain taaki deliver karte waqt aasaani ho
+            offlineMessagesDB[targetId].push(data);
+            socket.emit('messageStatus', { id, status: 'sent' }); // Status sirf 'sent' dikhayega
+            console.log(`📩 Message queued for offline user: ${targetId}`);
         }
     });
 
