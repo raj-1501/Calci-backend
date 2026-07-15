@@ -4,7 +4,10 @@ const socketIo = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, { cors: { origin: "*" } });
+const io = socketIo(server, { 
+    cors: { origin: "*" },
+    maxHttpBufferSize: 1e8 // Ye 100MB limit set kar dega
+});
 
 // In-Memory Databases (Zero-trace on server restart for absolute security)
 const usersDB = {}; 
