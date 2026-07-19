@@ -43,27 +43,8 @@ io.on('connection', (socket) => {
             isOnline: !ninjaMode, 
             lastSeen: usersDB[userId].lastSeen 
         });
-
-        // 🚀 NEW: DELIVER OFFLINE MESSAGES ON RECONNECT
-        if (offlineMessagesDB[userId] && offlineMessagesDB[userId].length > 0) {
-            console.log(`📤 Delivering ${offlineMessagesDB[userId].length} pending messages to ${userId}`);
-            
-            offlineMessagesDB[userId].forEach((msgData) => {
-                socket.emit('receiveMessage', { 
-                    senderId: msgData.senderId, 
-                    message: msgData.message, 
-                    id: msgData.id, 
-                    type: msgData.type, 
-                    replyTo: msgData.replyTo, 
-                    mediaDuration: msgData.mediaDuration, 
-                    isViewOnce: msgData.isViewOnce, 
-                    isMuted: msgData.isMuted 
-                });
-            });
-            
-            // Queue clear kar do message bhejne ke baad
-            offlineMessagesDB[userId] = []; 
-        }
+        
+        // 🚀 NOTE: Offline message delivery is moved to 'fetchOfflineMessages'
     });
 
     socket.on('getUserInfo', (targetId, callback) => {
@@ -101,6 +82,24 @@ io.on('connection', (socket) => {
             offlineMessagesDB[targetId].push(data);
             socket.emit('messageStatus', { id, status: 'sent' }); // Status sirf 'sent' dikhayega
             console.log(`📩 Message queued for offline user: ${targetId}`);
+        }
+    });
+
+    // 🚀 NAYA EVENT: FETCH OFFLINE MESSAGES (Perfect Logic)
+    socket.on('fetchOfflineMessages', (data) => {
+        const { myId, targetId } = data;
+        
+        if (offlineMessagesDB[myId] && offlineMessagesDB[myId].length > 0) {
+            // Sirf us dost ke messages nikalo jiski chat kholi gayi hai
+            const pendingMessages = offlineMessagesDB[myId].filter(msg => msg.senderId === targetId);
+            
+            pendingMessages.forEach(msgData => {
+                socket.emit('receiveMessage', msgData); // Message deliver kar diya
+            });
+
+            // Deliver hone ke baad un messages ko queue se delete kar do
+            offlineMessagesDB[myId] = offlineMessagesDB[myId].filter(msg => msg.senderId !== targetId);
+            console.log(`📤 Delivered ${pendingMessages.length} offline messages to ${myId}`);
         }
     });
 
