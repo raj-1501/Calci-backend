@@ -16,7 +16,7 @@ const offlineMessagesDB = {}; // { targetId: [msg1, msg2] }
 
 // Health Check Route
 app.get("/", (req, res) => {
-    res.status(200).send("CalciChat Server is alive and running!");
+    res.status(200).send("CalciChat Server is alive and ready for Secure Calls!");
 });
 
 io.on('connection', (socket) => {
@@ -43,8 +43,6 @@ io.on('connection', (socket) => {
             isOnline: !ninjaMode, 
             lastSeen: usersDB[userId].lastSeen 
         });
-        
-        // 🚀 NOTE: Offline message delivery is moved to 'fetchOfflineMessages'
     });
 
     socket.on('getUserInfo', (targetId, callback) => {
@@ -75,29 +73,26 @@ io.on('connection', (socket) => {
             });
             socket.emit('messageStatus', { id, status: 'delivered' });
         } else {
-            // 🚀 NEW: Agar dost offline hai, queue mein daalo
+            // Agar dost offline hai, queue mein daalo
             if (!offlineMessagesDB[targetId]) offlineMessagesDB[targetId] = [];
-            
-            // Pura data object save kar rahe hain taaki deliver karte waqt aasaani ho
             offlineMessagesDB[targetId].push(data);
-            socket.emit('messageStatus', { id, status: 'sent' }); // Status sirf 'sent' dikhayega
+            socket.emit('messageStatus', { id, status: 'sent' });
             console.log(`📩 Message queued for offline user: ${targetId}`);
         }
     });
 
-    // 🚀 NAYA EVENT: FETCH OFFLINE MESSAGES (Perfect Logic)
+    // FETCH OFFLINE MESSAGES
     socket.on('fetchOfflineMessages', (data) => {
         const { myId, targetId } = data;
         
         if (offlineMessagesDB[myId] && offlineMessagesDB[myId].length > 0) {
-            // Sirf us dost ke messages nikalo jiski chat kholi gayi hai
             const pendingMessages = offlineMessagesDB[myId].filter(msg => msg.senderId === targetId);
             
             pendingMessages.forEach(msgData => {
-                socket.emit('receiveMessage', msgData); // Message deliver kar diya
+                socket.emit('receiveMessage', msgData);
             });
 
-            // Deliver hone ke baad un messages ko queue se delete kar do
+            // Deliver hone ke baad delete kar do
             offlineMessagesDB[myId] = offlineMessagesDB[myId].filter(msg => msg.senderId !== targetId);
             console.log(`📤 Delivered ${pendingMessages.length} offline messages to ${myId}`);
         }
@@ -171,7 +166,6 @@ io.on('connection', (socket) => {
         const validStatuses = {};
         
         for (let uid in statusesDB) {
-            // Delete statuses older than 24 hours (86,400,000 ms)
             statusesDB[uid] = statusesDB[uid].filter(s => now - s.timestamp < 86400000);
             if (statusesDB[uid].length > 0) validStatuses[uid] = statusesDB[uid];
         }
@@ -190,7 +184,57 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // 6. DISCONNECTION & OFFLINE BROADCAST
+    // 🚀🚀 6. NEW: AGORA CALLING SIGNALING 🚀🚀
+    // ==========================================
+    
+    // Call Start karna
+    socket.on('initiateCall', (data) => {
+        const { targetId, callerId, callerName, callType, channelName } = data;
+        const target = usersDB[targetId];
+        
+        if (target && target.socketId) {
+            console.log(`📞 Call Initiated: ${callerId} -> ${targetId} (${callType})`);
+            io.to(target.socketId).emit('incomingCall', { callerId, callerName, callType, channelName });
+        } else {
+            socket.emit('callFailed', { reason: 'User is offline or unreachable' });
+        }
+    });
+
+    // Call Uthana
+    socket.on('acceptCall', (data) => {
+        const { callerId, channelName } = data;
+        const caller = usersDB[callerId];
+        
+        if (caller && caller.socketId) {
+            console.log(`✅ Call Accepted by user for channel: ${channelName}`);
+            io.to(caller.socketId).emit('callAccepted', { channelName });
+        }
+    });
+
+    // Call Reject karna (Kaat dena)
+    socket.on('rejectCall', (data) => {
+        const { callerId } = data;
+        const caller = usersDB[callerId];
+        
+        if (caller && caller.socketId) {
+            console.log(`❌ Call Rejected by user`);
+            io.to(caller.socketId).emit('callRejected');
+        }
+    });
+
+    // Chalte hue Call ko End karna
+    socket.on('endCall', (data) => {
+        const { targetId } = data;
+        const target = usersDB[targetId];
+        
+        if (target && target.socketId) {
+            console.log(`🔚 Call Ended with ${targetId}`);
+            io.to(target.socketId).emit('callEnded');
+        }
+    });
+
+    // ==========================================
+    // 7. DISCONNECTION & OFFLINE BROADCAST
     // ==========================================
     socket.on('disconnect', () => {
         console.log("🔴 User disconnected: " + socket.id);
